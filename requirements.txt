@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+opencv-python
+numpy<2.0.0
+ultralytics
+python-multipart
+streamlit
+streamlit-webrtc
+av
+tensorflow
