@@ -1,6 +1,7 @@
 import base64
 import html
 import os
+import time
 
 import requests
 import streamlit as st
@@ -305,6 +306,143 @@ def render_video_preview(uploaded_file, raw: bytes, *, autoplay: bool) -> None:
 
 if "last_analysis" not in st.session_state:
     st.session_state.last_analysis = None
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
+if "auth_mode" not in st.session_state:
+    st.session_state.auth_mode = "login"
+if "users_db" not in st.session_state:
+    st.session_state.users_db = {"admin": "password"} # Default mock user
+if "is_loading" not in st.session_state:
+    st.session_state.is_loading = False
+if "is_logging_out" not in st.session_state:
+    st.session_state.is_logging_out = False
+
+# --- FULL SCREEN LOADING OVERLAY ---
+if st.session_state.is_loading or st.session_state.is_logging_out:
+    msg = "Logging in..." if st.session_state.is_loading else "Logging out..."
+    st.markdown(
+        f"""
+        <style>
+        .loading-overlay {{
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 999999;
+            color: white;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }}
+        .spinner {{
+            width: 60px; height: 60px; border: 6px solid rgba(255,255,255,0.1);
+            border-top-color: #ff6384; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }}
+        @keyframes spin {{ 100% {{ transform: rotate(360deg); }} }}
+        </style>
+        <div class="loading-overlay">
+            <div class="spinner"></div>
+            <h2 style="margin-top: 25px; font-weight: 600;">{msg}</h2>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    time.sleep(3.5)
+    if st.session_state.is_loading:
+        st.session_state.is_loading = False
+        st.session_state.logged_in = True
+        st.rerun()
+    if st.session_state.is_logging_out:
+        st.session_state.is_logging_out = False
+        st.session_state.logged_in = False
+        st.session_state.current_user = None
+        st.rerun()
+
+def render_auth_ui():
+    st.markdown(
+        """
+        <div class="hero-container animate-in" style="text-align: center; max-width: 600px; margin: 0 auto 2rem auto;">
+            <h1 class="hero-title" style="font-size: 2.5rem;">AI Fitness Trainer</h1>
+            <p class="hero-subtitle" style="margin: 0 auto;">Sign in to track your workouts and analyze your form.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        with st.container(border=True):
+            mode = st.session_state.auth_mode
+            
+            if mode == "login":
+                st.markdown('<h2 style="margin-bottom: 1.5rem; text-align: center;">Welcome Back</h2>', unsafe_allow_html=True)
+                username = st.text_input("Email", key="login_user")
+                password = st.text_input("Password", type="password", key="login_pass")
+                
+                if st.button("Log In", type="primary", use_container_width=True):
+                    if username in st.session_state.users_db and st.session_state.users_db[username] == password:
+                        st.session_state.current_user = username
+                        st.session_state.is_loading = True
+                        st.rerun()
+                    else:
+                        st.toast("❌ Password or email is wrong", icon="❌")
+                
+                st.markdown("<div style='text-align: center; margin-top: 1rem; font-size: 0.9rem; opacity: 0.7;'>Don't have an account?</div>", unsafe_allow_html=True)
+                if st.button("Sign Up instead", use_container_width=True):
+                    st.session_state.auth_mode = "signup"
+                    st.rerun()
+                    
+            else:
+                st.markdown('<h2 style="margin-bottom: 1.5rem; text-align: center;">Create Account</h2>', unsafe_allow_html=True)
+                new_user = st.text_input("Email", key="signup_user")
+                new_pass = st.text_input("Password", type="password", key="signup_pass")
+                confirm_pass = st.text_input("Confirm Password", type="password", key="signup_confirm")
+                
+                if st.button("Sign Up", type="primary", use_container_width=True):
+                    if not new_user or not new_pass:
+                        st.toast("❌ Please fill in all fields.", icon="❌")
+                    elif new_pass != confirm_pass:
+                        st.toast("❌ Passwords do not match.", icon="❌")
+                    elif new_user in st.session_state.users_db:
+                        st.toast("❌ Email is already registered please login", icon="❌")
+                    else:
+                        st.session_state.users_db[new_user] = new_pass
+                        st.session_state.current_user = new_user
+                        st.session_state.is_loading = True
+                        st.rerun()
+                        
+                st.markdown("<div style='text-align: center; margin-top: 1rem; font-size: 0.9rem; opacity: 0.7;'>Already have an account?</div>", unsafe_allow_html=True)
+                if st.button("Log In instead", use_container_width=True):
+                    st.session_state.auth_mode = "login"
+                    st.rerun()
+
+if not st.session_state.logged_in:
+    render_auth_ui()
+    st.stop()
+
+# --- Top Nav / Logout ---
+st.markdown(
+    """
+    <style>
+    div[data-testid="stElementContainer"]:has(.logout-anchor) {
+        display: none;
+    }
+    div[data-testid="stElementContainer"]:has(.logout-anchor) + div[data-testid="stElementContainer"] {
+        position: fixed !important;
+        top: 25px !important;
+        right: 25px !important;
+        z-index: 9999 !important;
+        width: auto !important;
+    }
+    </style>
+    <div class="logout-anchor"></div>
+    """,
+    unsafe_allow_html=True
+)
+if st.button("🚪 Logout"):
+    st.session_state.is_logging_out = True
+    st.rerun()
 
 st.markdown(
     """
@@ -440,45 +578,61 @@ with c2:
                     val = res.get("value", 0)
                     self.message = res.get("message", "")
                     self.hint = res.get("hint", "")
+                    full_body = res.get("full_body_visible", True)
 
-                    if self.exercise == "Push-Ups":
-                        if val < 110:
-                            self.stage = "down"
-                        elif val > 150 and self.stage == "down":
-                            self.count += 1
-                            self.stage = "up"
-                    elif self.exercise == "Squats":
-                        if val < 100:
-                            self.stage = "down"
-                        elif val > 160 and self.stage == "down":
-                            self.count += 1
-                            self.stage = "up"
-                    elif self.exercise == "Jumping Jacks":
-                        if val > 200:
-                            self.stage = "open"
-                        elif val < 100 and self.stage == "open":
-                            self.count += 1
-                            self.stage = "close"
-                    elif self.exercise == "Plank":
-                        if 160 < val < 200:
-                            self.frames += 1
-                        self.count = int(self.frames / 10)
+                    if not full_body:
+                        # Do not count if full body is not visible
+                        pass
+                    else:
+                        if self.exercise == "Push-Ups":
+                            if val < 110:
+                                self.stage = "down"
+                            elif val > 150 and self.stage == "down":
+                                self.count += 1
+                                self.stage = "up"
+                        elif self.exercise == "Squats":
+                            if val < 100:
+                                self.stage = "down"
+                            elif val > 160 and self.stage == "down":
+                                self.count += 1
+                                self.stage = "up"
+                        elif self.exercise == "Jumping Jacks":
+                            if val > 200:
+                                self.stage = "open"
+                            elif val < 100 and self.stage == "open":
+                                self.count += 1
+                                self.stage = "close"
+                        elif self.exercise == "Plank":
+                            if 160 < val < 200:
+                                self.frames += 1
+                            self.count = int(self.frames / 10)
+
+                    # --- IMPROVED UI OVERLAY ---
+                    # Semi-transparent background for count
+                    overlay = img.copy()
+                    cv2.rectangle(overlay, (0, 350), (220, 420), (0, 0, 0), -1)
+                    cv2.addWeighted(overlay, 0.4, img, 0.6, 0, img)
 
                     # Draw count
-                    cv2.putText(img, f"Count: {self.count}", (10, 400),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3)
+                    cv2.putText(img, f"Count: {self.count}", (15, 400),
+                                cv2.FONT_HERSHEY_DUPLEX, 1.2, (255, 255, 255), 2)
 
-                    # Draw message
+                    # Draw message and hint with backgrounds
                     if self.message:
-                        cv2.putText(img, self.message, (50, 50),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+                        (m_w, m_h), _ = cv2.getTextSize(self.message, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
+                        cv2.rectangle(img, (10, 15), (20 + m_w, 60), (0, 0, 180), -1)
+                        cv2.putText(img, self.message, (15, 50),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+                        
                         if self.hint:
-                            cv2.putText(img, self.hint, (10, 90),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                            (h_w, h_h), _ = cv2.getTextSize(self.hint, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
+                            cv2.rectangle(img, (10, 70), (20 + h_w, 100), (40, 40, 40), -1)
+                            cv2.putText(img, self.hint, (15, 92),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 255, 200), 1)
 
                 except Exception as e:
-                    cv2.putText(img, "Server Error or Loading...", (50, 50),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    cv2.putText(img, "Server Error...", (50, 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
                 return av.VideoFrame.from_ndarray(img, format="bgr24")
 
@@ -491,10 +645,18 @@ with c2:
         )
         
         if webrtc_ctx.state.playing and webrtc_ctx.video_processor:
+            # Sync exercise
             if webrtc_ctx.video_processor.exercise != exercise:
                 webrtc_ctx.video_processor.exercise = exercise
                 webrtc_ctx.video_processor.count = 0
                 webrtc_ctx.video_processor.frames = 0
+            
+            # Reset Button
+            if st.button("🔄 Reset Current Count", use_container_width=True):
+                webrtc_ctx.video_processor.count = 0
+                webrtc_ctx.video_processor.frames = 0
+                webrtc_ctx.video_processor.stage = "start"
+                st.toast("Counter reset to zero!", icon="🔄")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -550,12 +712,18 @@ if analyze and uploaded_file is not None and raw is not None:
                 res = response.json()
                 if res.get("error") == "exercise video didn't match":
                     status.update(label="Exercise mismatch detected!", state="error")
+                    # Pop-up on the right side of the screen
+                    st.toast(
+                        f"Mismatch! You selected {res.get('selected')}, but detected {res.get('detected')}.", 
+                        icon="❌"
+                    )
                     st.error(
                         f"**Exercise video didn't match.** "
                         f"You selected **{res.get('selected')}**, but the video appears to be **{res.get('detected')}**."
                     )
                 else:
                     status.update(label="Validation error", state="error")
+                    st.toast("Validation error", icon="⚠️")
                     st.error(res.get("error", "The server rejected the request."))
                 st.session_state.last_analysis = None
             else:
@@ -646,260 +814,3 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# import streamlit as st
-# import requests
-# import cv2
-# import av
-# from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
-
-# API_BASE = "http://127.0.0.1:8000"
-
-# st.title("🏋️ AI Fitness Trainer")
-
-# exercise = st.selectbox("Select Exercise", [
-#     "Push-Ups", "Squats", "Plank", "Jumping Jacks"
-# ])
-
-# mode = st.radio("Choose Mode", ["Upload Video", "Live Camera"])
-
-# # ===================================================
-# # 📹 UPLOAD MODE
-# # ===================================================
-
-# if mode == "Upload Video":
-
-#     uploaded_file = st.file_uploader("Upload Video", type=["mp4", "mov"])
-
-#     if uploaded_file:
-#         st.video(uploaded_file)
-
-#         if st.button("Analyze"):
-#             res = requests.post(
-#                 f"{API_BASE}/analyze/",
-#                 files={"file": uploaded_file},
-#                 data={"exercise": exercise}
-#             )
-
-#             if res.status_code == 200:
-#                 data = res.json()
-
-#                 if exercise == "Plank":
-#                     st.success(f"Plank Time: {data['plank_time_seconds']} sec")
-#                 else:
-#                     st.success(f"Reps: {data['total_reps']}")
-
-#             else:
-#                 err = res.json()
-#                 st.error(
-#                     f"Wrong Exercise! You selected {err['selected']} but did {err['detected']}"
-#                 )
-
-
-# # ===================================================
-# # 🎥 LIVE CAMERA MODE
-# # ===================================================
-
-# if mode == "Live Camera":
-
-#     st.warning("Allow camera access")
-
-#     class VideoProcessor(VideoProcessorBase):
-
-#         def recv(self, frame):
-#             img = frame.to_ndarray(format="bgr24")
-
-#             _, buffer = cv2.imencode(".jpg", img)
-
-#             try:
-#                 res = requests.post(
-#                     f"{API_BASE}/live/",
-#                     files={"file": buffer.tobytes()},
-#                     data={"exercise": exercise},
-#                     timeout=1
-#                 ).json()
-
-#                 if res["message"]:
-#                     cv2.putText(img, res["message"], (50, 50),
-#                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
-
-#                 cv2.putText(img, f"Value: {res['value']}", (10, 400),
-#                             cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-
-#             except:
-#                 cv2.putText(img, "Server Error", (50, 50),
-#                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
-
-#             return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-#     webrtc_streamer(
-#         key="cam",
-#         video_processor_factory=VideoProcessor
-#     )
-
-
-# import streamlit as st
-# import requests
-# import cv2
-# import av
-# from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
-
-# API_BASE = "http://127.0.0.1:8000"
-
-# st.set_page_config(page_title="AI Trainer", layout="wide")
-
-# EXERCISES = ["Push-Ups", "Squats", "Plank", "Jumping Jacks"]
-
-# # ==============================
-# # MODE SWITCH
-# # ==============================
-# mode = st.radio("Choose Mode", ["Upload Video", "Live Camera"])
-
-# exercise = st.selectbox("Select Exercise", EXERCISES)
-
-# # ==============================
-# # UPLOAD VIDEO MODE (FIXED)
-# # ==============================
-# if mode == "Upload Video":
-
-#     uploaded_file = st.file_uploader("Upload Video", type=["mp4", "mov", "avi"])
-
-#     if uploaded_file is not None:
-#         st.video(uploaded_file)
-
-#         if st.button("Analyze Video"):
-
-#             raw = uploaded_file.read()
-
-#             files = {
-#                 "file": (
-#                     uploaded_file.name,
-#                     raw,
-#                     uploaded_file.type or "video/mp4"
-#                 )
-#             }
-
-#             data = {"exercise": exercise}
-
-#             try:
-#                 res = requests.post(
-#                     f"{API_BASE}/analyze/",
-#                     files=files,
-#                     data=data,
-#                     timeout=60
-#                 )
-
-#                 if res.status_code == 200:
-#                     result = res.json()
-
-#                     if exercise == "Plank":
-#                         st.success(f"Plank Time: {result['plank_time_seconds']} sec")
-#                     else:
-#                         st.success(f"Reps: {result['total_reps']}")
-
-#                 elif res.status_code == 400:
-#                     err = res.json()
-#                     st.error(
-#                         f"❌ Wrong Exercise!\n\n"
-#                         f"Selected: {err.get('selected')}\n"
-#                         f"Detected: {err.get('detected')}"
-#                     )
-
-#                 else:
-#                     st.error("Server Error")
-
-#             except Exception as e:
-#                 st.error("Connection Error")
-
-
-# # ==============================
-# # LIVE CAMERA MODE (WORKING)
-# # ==============================
-# elif mode == "Live Camera":
-
-#     st.warning("Allow camera access")
-
-#     class VideoProcessor(VideoProcessorBase):
-
-#         def __init__(self):
-#             self.states = {
-#                 "Push-Ups": {"counter": 0, "stage": "start"},
-#                 "Squats": {"counter": 0, "stage": "start"},
-#                 "Jumping Jacks": {"counter": 0, "stage": "start"},
-#                 "Plank": {"frames": 0}
-#             }
-
-#         def recv(self, frame):
-#             img = frame.to_ndarray(format="bgr24")
-
-#             _, buffer = cv2.imencode(".jpg", img)
-
-#             try:
-#                 res = requests.post(
-#                     f"{API_BASE}/live/",
-#                     files={"file": buffer.tobytes()},
-#                     data={"exercise": exercise},
-#                     timeout=1
-#                 ).json()
-
-#                 detected = res.get("detected", "")
-#                 value = res.get("value", 0)
-#                 message = res.get("message", "")
-
-#                 # DETECTED LABEL
-#                 cv2.putText(img, f"Detected: {detected}",
-#                             (10, 30),
-#                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-
-#                 # ---------------- COUNTERS ----------------
-
-#                 if exercise == "Push-Ups":
-#                     if value < 110:
-#                         self.states["Push-Ups"]["stage"] = "down"
-#                     if value > 150 and self.states["Push-Ups"]["stage"] == "down":
-#                         self.states["Push-Ups"]["counter"] += 1
-#                         self.states["Push-Ups"]["stage"] = "up"
-#                     count = self.states["Push-Ups"]["counter"]
-
-#                 elif exercise == "Squats":
-#                     if value < 100:
-#                         self.states["Squats"]["stage"] = "down"
-#                     elif value > 160 and self.states["Squats"]["stage"] == "down":
-#                         self.states["Squats"]["counter"] += 1
-#                         self.states["Squats"]["stage"] = "up"
-#                     count = self.states["Squats"]["counter"]
-
-#                 elif exercise == "Jumping Jacks":
-#                     if value > 200:
-#                         self.states["Jumping Jacks"]["stage"] = "open"
-#                     elif value < 100 and self.states["Jumping Jacks"]["stage"] == "open":
-#                         self.states["Jumping Jacks"]["counter"] += 1
-#                         self.states["Jumping Jacks"]["stage"] = "close"
-#                     count = self.states["Jumping Jacks"]["counter"]
-
-#                 elif exercise == "Plank":
-#                     if 165 < value < 195:
-#                         self.states["Plank"]["frames"] += 1
-#                     count = int(self.states["Plank"]["frames"] / 10)
-
-#                 # COUNT DISPLAY
-#                 cv2.putText(img, f"Count: {count}",
-#                             (10, 400),
-#                             cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-
-#                 # FEEDBACK
-#                 if message:
-#                     cv2.putText(img, message,
-#                                 (50, 70),
-#                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
-
-#             except:
-#                 cv2.putText(img, "Server Error",
-#                             (50, 50),
-#                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
-
-#             return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-#     webrtc_streamer(
-#         key="fitness-cam",
-#         video_processor_factory=VideoProcessor
-#     )
