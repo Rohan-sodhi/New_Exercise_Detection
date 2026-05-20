@@ -97,30 +97,6 @@ async def live_analysis(
             kp = results[0].keypoints.xy[0].cpu().numpy()
 
             if len(kp) >= 17:
-                conf = results[0].keypoints.conf[0].cpu().numpy()
-                
-                # 1. Bounding Box Edge Check
-                # If the person's bounding box touches the edges, they are likely cut off.
-                box = results[0].boxes[0].xyxy[0].cpu().numpy() # [x1, y1, x2, y2]
-                h, w = frame.shape[:2]
-                margin = 10
-                is_touching_edge = (box[1] < margin or box[3] > h - margin)
-                
-                # 2. Keypoint Confidence Check (Stricter threshold)
-                # 0: nose, 5: l_shoulder, 6: r_shoulder, 11: l_hip, 12: r_hip, 15: l_ankle, 16: r_ankle
-                has_head = conf[0] > 0.7
-                has_shoulder = conf[5] > 0.7 or conf[6] > 0.7
-                has_hip = conf[11] > 0.7 or conf[12] > 0.7
-                has_ankle = conf[15] > 0.7 or conf[16] > 0.7
-
-                if is_touching_edge or not (has_head and has_shoulder and has_hip and has_ankle):
-                    result["full_body_visible"] = False
-                    result["message"] = "Full Body Not Visible"
-                    result["hint"] = "Step back until your head and feet are well within the frame."
-                    return JSONResponse(result)
-                
-                result["full_body_visible"] = True
-                
                 l_shoulder = kp[5]
                 r_shoulder = kp[6]
                 l_elbow = kp[7]
@@ -130,7 +106,38 @@ async def live_analysis(
                 l_ankle = kp[15]
                 r_ankle = kp[16]
 
+                conf = results[0].keypoints.conf[0].cpu().numpy()
+                
+                # Essential landmarks for ANY exercise to be valid
+                # 0: nose, 5/6: shoulders, 11/12: hips
+                has_upper = conf[0] > 0.5 and (conf[5] > 0.5 or conf[6] > 0.5)
+                has_mid = conf[11] > 0.5 or conf[12] > 0.5
+                
+                # For standing exercises (Squats/Jumping Jacks), we also need ankles
                 exercise_norm = normalize_exercise_name(exercise)
+                has_lower = True
+                if exercise_norm in ["Squats", "Jumping Jacks"]:
+                    has_lower = conf[15] > 0.5 or conf[16] > 0.5
+
+                if not (has_upper and has_mid and has_lower):
+                    result["full_body_visible"] = False
+                    result["message"] = "Full Body Not Visible"
+                    result["hint"] = "Step back so your head, hips, and feet are clearly in frame."
+                    return JSONResponse(result)
+                
+                result["full_body_visible"] = True
+
+
+                exercise_norm = normalize_exercise_name(exercise)
+                
+                # --- POSTURE DETECTION ---
+                is_standing = True
+                if np.any(l_ankle) and np.any(l_shoulder):
+                    y_dist = abs(l_ankle[1] - l_shoulder[1])
+                    x_dist = abs(l_shoulder[0] - l_ankle[0])
+                    # Cast to bool to avoid JSON serialization error with np.bool_
+                    is_standing = bool(y_dist > x_dist * 0.4)
+                result["is_standing"] = is_standing
 
                 # PUSH-UP
                 if exercise_norm == "Push-Ups":
@@ -242,6 +249,7 @@ async def analyze_video(
 
     frame_skip = 2
     frame_count = 0
+    processed_frames = 0
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps == 0 or fps is None:
@@ -260,113 +268,101 @@ async def analyze_video(
         if frame_count % frame_skip != 0:
             continue
 
-        frame = cv2.resize(frame, (640, 480))
+        processed_frames += 1
+
+        # --- MOBILE UPLOAD FIX: MAINTAIN ASPECT RATIO ---
+        # This prevents portrait videos from being squashed, which causes 0 reps.
+        h, w = frame.shape[:2]
+        target_size = 640
+        if h > w:
+            new_h, new_w = target_size, int(w * target_size / h)
+        else:
+            new_w, new_h = target_size, int(h * target_size / w)
+        frame = cv2.resize(frame, (new_w, new_h))
 
         try:
-            results = model(frame, conf=0.4, verbose=False)
+            # Lowered confidence (0.3) for mobile video to handle blur
+            results = model(frame, conf=0.3, verbose=False) 
 
-            if (
-                results
-                and results[0].keypoints is not None
-                and len(results[0].keypoints.xy) > 0
-            ):
-                kp = results[0].keypoints.xy[0].cpu().numpy()
+            if not results or results[0].keypoints is None or len(results[0].keypoints.xy) == 0:
+                continue
 
-                if len(kp) < 17:
-                    continue
+            kp = results[0].keypoints.xy[0].cpu().numpy()
 
-                conf = results[0].keypoints.conf[0].cpu().numpy()
-                # Relaxed visibility for video upload to ensure it doesn't skip frames unnecessarily
-                has_shoulder = conf[5] > 0.4 or conf[6] > 0.4
-                has_hip = conf[11] > 0.4 or conf[12] > 0.4
-                has_ankle = conf[15] > 0.4 or conf[16] > 0.4
+            if len(kp) < 17:
+                continue
 
-                # Essential: We need at least these for any exercise to be meaningful
-                if not (has_shoulder and has_hip and has_ankle):
-                    continue
+            conf = results[0].keypoints.conf[0].cpu().numpy()
+            
+            # More lenient visibility for uploaded videos
+            has_shoulder = conf[5] > 0.3 or conf[6] > 0.3
+            has_hip = conf[11] > 0.3 or conf[12] > 0.3
 
-                # Keypoints
-                l_shoulder = kp[5]
-                r_shoulder = kp[6]
+            if not (has_shoulder and has_hip):
+                continue
 
-                l_elbow = kp[7]
-                l_wrist = kp[9]
+            # Keypoints
+            l_shoulder = kp[5]
+            r_shoulder = kp[6]
 
-                l_hip = kp[11]
-                l_knee = kp[13]
-                l_ankle = kp[15]
+            l_elbow = kp[7]
+            l_wrist = kp[9]
 
-                r_ankle = kp[16]
+            l_hip = kp[11]
+            l_knee = kp[13]
+            l_ankle = kp[15]
+            r_knee = kp[14]
+            r_ankle = kp[16]
 
-                # ========================================
-                # PUSH-UPS
-                # ========================================
+            # --- LANDMARK FALLBACKS FOR ROBUSTNESS ---
+            # Use knee as fallback for ankle if feet are out of frame
+            eff_l_ankle = l_ankle if np.any(l_ankle) else l_knee
+            eff_r_ankle = r_ankle if np.any(r_ankle) else r_knee
 
+            # ========================================
+            # PUSH-UPS
+            # ========================================
+            if exercise == "Push-Ups":
                 if np.any(l_shoulder) and np.any(l_elbow) and np.any(l_wrist):
-                    pushup_angle = calculate_angle(
-                        l_shoulder,
-                        l_elbow,
-                        l_wrist
-                    )
-
+                    pushup_angle = calculate_angle(l_shoulder, l_elbow, l_wrist)
                     if pushup_angle < 110:
                         states["Push-Ups"]["stage"] = "down"
-
-                    if (
-                        pushup_angle > 150
-                        and states["Push-Ups"]["stage"] == "down"
-                    ):
+                    elif pushup_angle > 160 and states["Push-Ups"]["stage"] == "down":
                         states["Push-Ups"]["stage"] = "up"
                         states["Push-Ups"]["counter"] += 1
 
-                # ========================================
-                # PLANK
-                # ========================================
-
-
-# ========================================
-# PLANK (STRICT DETECTION) - FIXED          
-# ========================================
-
-                if np.any(l_shoulder) and np.any(l_hip) and np.any(l_ankle):
-                    plank_angle = calculate_angle(
-                        l_shoulder,
-                        l_hip,
-                        l_ankle
-                    )
-
-                    # Vertical difference between shoulder and hip  
-                    hip_y_diff = abs(l_shoulder[1]   - l_hip[1])
-
-                    # Horizontal body balance check
-                    body_length = abs(l_shoulder[0] - l_ankle[0])
-
-                    # STRICT plank validation
-                    if (
-                        160 < plank_angle < 200      # slightly more relaxed range
-                        and hip_y_diff < 130         
-                        and body_length > 80        
-                    ):
+            # ========================================
+            # PLANK
+            # ========================================
+            elif exercise == "Plank":
+                if np.any(l_shoulder) and np.any(l_hip) and np.any(eff_l_ankle):
+                    plank_angle = calculate_angle(l_shoulder, l_hip, eff_l_ankle)
+                    hip_y_diff = abs(l_shoulder[1] - l_hip[1])
+                    
+                    # Relaxed plank validation (matching live camera logic)
+                    if (160 < plank_angle < 200) and hip_y_diff < 180:
                         states["Plank"]["frames"] += frame_skip
 
-                # ========================================
-                # POSTURE CHECK
-                # ========================================
-                
-                y_dist = l_ankle[1] - l_shoulder[1]
-                x_dist = abs(l_shoulder[0] - l_ankle[0])
-                
-                # A standing person is much taller than they are wide.
-                # A push-up/plank person (side view) is much wider than they are tall.
-                is_standing = y_dist > x_dist * 0.5
+            # ========================================
+            # POSTURE CHECK (Robust for Mobile/Portrait)
+            # ========================================
+            
+            # Default to the most likely posture for the selected exercise
+            is_standing = exercise in ["Squats", "Jumping Jacks"]
+            
+            if np.any(eff_l_ankle) and np.any(l_shoulder):
+                y_dist = abs(eff_l_ankle[1] - l_shoulder[1])
+                x_dist = abs(l_shoulder[0] - eff_l_ankle[0])
+                # If person is significantly taller than wide, they are likely standing
+                is_standing = y_dist > x_dist * 0.4
 
-                # ========================================
-                # JUMPING JACKS
-                # ========================================
-
+            # ========================================
+            # JUMPING JACKS
+            # ========================================
+            if exercise == "Jumping Jacks":
                 if is_standing:
-                    # For Jumping Jacks, both ankles must be visible with high confidence
-                    if not (conf[15] > 0.5 and conf[16] > 0.5):
+                    # For Jumping Jacks, both ankles must be visible (Lowered threshold to 0.3 for mobile uploads)
+                    if not (conf[15] > 0.3 and conf[16] > 0.3):
                         continue
 
                     ankle_distance = abs(
@@ -377,7 +373,8 @@ async def analyze_video(
                         l_shoulder[0] - r_shoulder[0]
                     )
 
-                    if ankle_distance > shoulder_distance * 1.5:
+                    # More lenient spread requirement (1.3 instead of 1.5)
+                    if ankle_distance > shoulder_distance * 1.3:
                         states["Jumping Jacks"]["stage"] = "open"
 
                     elif (
@@ -387,10 +384,10 @@ async def analyze_video(
                         states["Jumping Jacks"]["stage"] = "close"
                         states["Jumping Jacks"]["counter"] += 1
 
-                # ========================================
-                # SQUATS
-                # ========================================
-
+            # ========================================
+            # SQUATS
+            # ========================================
+            elif exercise == "Squats":
                 if is_standing and np.any(l_hip) and np.any(l_knee) and np.any(l_ankle):
                     squat_angle = calculate_angle(
                         l_hip,
@@ -515,3 +512,11 @@ async def analyze_video(
         "total_reps": final_results[exercise]
     })
 
+@app.get("/health")
+async def health_check():
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/")
+async def root():
+    return JSONResponse({"status": "ok", "message": "AI Fitness Trainer API"})
