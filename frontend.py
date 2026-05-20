@@ -306,143 +306,8 @@ def render_video_preview(uploaded_file, raw: bytes, *, autoplay: bool) -> None:
 
 if "last_analysis" not in st.session_state:
     st.session_state.last_analysis = None
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "current_user" not in st.session_state:
-    st.session_state.current_user = None
-if "auth_mode" not in st.session_state:
-    st.session_state.auth_mode = "login"
-if "users_db" not in st.session_state:
-    st.session_state.users_db = {"admin": "password"} # Default mock user
-if "is_loading" not in st.session_state:
-    st.session_state.is_loading = False
-if "is_logging_out" not in st.session_state:
-    st.session_state.is_logging_out = False
 
-# --- FULL SCREEN LOADING OVERLAY ---
-if st.session_state.is_loading or st.session_state.is_logging_out:
-    msg = "Logging in..." if st.session_state.is_loading else "Logging out..."
-    st.markdown(
-        f"""
-        <style>
-        .loading-overlay {{
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px);
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            z-index: 999999;
-            color: white;
-            font-family: 'Plus Jakarta Sans', sans-serif;
-        }}
-        .spinner {{
-            width: 60px; height: 60px; border: 6px solid rgba(255,255,255,0.1);
-            border-top-color: #ff6384; border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }}
-        @keyframes spin {{ 100% {{ transform: rotate(360deg); }} }}
-        </style>
-        <div class="loading-overlay">
-            <div class="spinner"></div>
-            <h2 style="margin-top: 25px; font-weight: 600;">{msg}</h2>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    time.sleep(3.5)
-    if st.session_state.is_loading:
-        st.session_state.is_loading = False
-        st.session_state.logged_in = True
-        st.rerun()
-    if st.session_state.is_logging_out:
-        st.session_state.is_logging_out = False
-        st.session_state.logged_in = False
-        st.session_state.current_user = None
-        st.rerun()
-
-def render_auth_ui():
-    st.markdown(
-        """
-        <div class="hero-container animate-in" style="text-align: center; max-width: 600px; margin: 0 auto 2rem auto;">
-            <h1 class="hero-title" style="font-size: 2.5rem;">AI Fitness Trainer</h1>
-            <p class="hero-subtitle" style="margin: 0 auto;">Sign in to track your workouts and analyze your form.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        with st.container(border=True):
-            mode = st.session_state.auth_mode
-            
-            if mode == "login":
-                st.markdown('<h2 style="margin-bottom: 1.5rem; text-align: center;">Welcome Back</h2>', unsafe_allow_html=True)
-                username = st.text_input("Email", key="login_user")
-                password = st.text_input("Password", type="password", key="login_pass")
-                
-                if st.button("Log In", type="primary", use_container_width=True):
-                    if username in st.session_state.users_db and st.session_state.users_db[username] == password:
-                        st.session_state.current_user = username
-                        st.session_state.is_loading = True
-                        st.rerun()
-                    else:
-                        st.toast("❌ Password or email is wrong", icon="❌")
-                
-                st.markdown("<div style='text-align: center; margin-top: 1rem; font-size: 0.9rem; opacity: 0.7;'>Don't have an account?</div>", unsafe_allow_html=True)
-                if st.button("Sign Up instead", use_container_width=True):
-                    st.session_state.auth_mode = "signup"
-                    st.rerun()
-                    
-            else:
-                st.markdown('<h2 style="margin-bottom: 1.5rem; text-align: center;">Create Account</h2>', unsafe_allow_html=True)
-                new_user = st.text_input("Email", key="signup_user")
-                new_pass = st.text_input("Password", type="password", key="signup_pass")
-                confirm_pass = st.text_input("Confirm Password", type="password", key="signup_confirm")
-                
-                if st.button("Sign Up", type="primary", use_container_width=True):
-                    if not new_user or not new_pass:
-                        st.toast("❌ Please fill in all fields.", icon="❌")
-                    elif new_pass != confirm_pass:
-                        st.toast("❌ Passwords do not match.", icon="❌")
-                    elif new_user in st.session_state.users_db:
-                        st.toast("❌ Email is already registered please login", icon="❌")
-                    else:
-                        st.session_state.users_db[new_user] = new_pass
-                        st.session_state.current_user = new_user
-                        st.session_state.is_loading = True
-                        st.rerun()
-                        
-                st.markdown("<div style='text-align: center; margin-top: 1rem; font-size: 0.9rem; opacity: 0.7;'>Already have an account?</div>", unsafe_allow_html=True)
-                if st.button("Log In instead", use_container_width=True):
-                    st.session_state.auth_mode = "login"
-                    st.rerun()
-
-if not st.session_state.logged_in:
-    render_auth_ui()
-    st.stop()
-
-# --- Top Nav / Logout ---
-st.markdown(
-    """
-    <style>
-    div[data-testid="stElementContainer"]:has(.logout-anchor) {
-        display: none;
-    }
-    div[data-testid="stElementContainer"]:has(.logout-anchor) + div[data-testid="stElementContainer"] {
-        position: fixed !important;
-        top: 25px !important;
-        right: 25px !important;
-        z-index: 9999 !important;
-        width: auto !important;
-    }
-    </style>
-    <div class="logout-anchor"></div>
-    """,
-    unsafe_allow_html=True
-)
-if st.button("🚪 Logout"):
-    st.session_state.is_logging_out = True
-    st.rerun()
+# Authentication removed for project demo
 
 st.markdown(
     """
@@ -579,23 +444,32 @@ with c2:
                     self.message = res.get("message", "")
                     self.hint = res.get("hint", "")
                     full_body = res.get("full_body_visible", True)
+                    is_standing = res.get("is_standing", True)
 
                     if not full_body:
                         # Do not count if full body is not visible
                         pass
                     else:
                         if self.exercise == "Push-Ups":
-                            if val < 110:
-                                self.stage = "down"
-                            elif val > 150 and self.stage == "down":
-                                self.count += 1
-                                self.stage = "up"
+                            if is_standing:
+                                self.message = "LIE DOWN!"
+                                self.hint = "Push-ups must be done horizontally."
+                            else:
+                                if val < 110:
+                                    self.stage = "down"
+                                elif val > 150 and self.stage == "down":
+                                    self.count += 1
+                                    self.stage = "up"
                         elif self.exercise == "Squats":
-                            if val < 100:
-                                self.stage = "down"
-                            elif val > 160 and self.stage == "down":
-                                self.count += 1
-                                self.stage = "up"
+                            if not is_standing:
+                                self.message = "STAND UP!"
+                                self.hint = "Squats must be done vertically."
+                            else:
+                                if val < 100:
+                                    self.stage = "down"
+                                elif val > 160 and self.stage == "down":
+                                    self.count += 1
+                                    self.stage = "up"
                         elif self.exercise == "Jumping Jacks":
                             if val > 200:
                                 self.stage = "open"
@@ -607,34 +481,73 @@ with c2:
                                 self.frames += 1
                             self.count = int(self.frames / 10)
 
-                    # --- IMPROVED UI OVERLAY ---
-                    # Semi-transparent background for count
+                    # --- PREMIUM COMPACT UI OVERLAY ---
+                    h, w = img.shape[:2]
+
+                    # 1. BOTTOM-LEFT DASHBOARD (Count)
+                    # More compact footer
                     overlay = img.copy()
-                    cv2.rectangle(overlay, (0, 350), (220, 420), (0, 0, 0), -1)
-                    cv2.addWeighted(overlay, 0.4, img, 0.6, 0, img)
+                    cv2.rectangle(overlay, (0, h - 70), (180, h), (0, 0, 0), -1)
+                    cv2.addWeighted(overlay, 0.6, img, 0.4, 0, img)
+                    
+                    # Thinner Accent Line
+                    cv2.line(img, (0, h - 70), (180, h - 70), (0, 255, 127), 2)
+                    
+                    # Smaller Labels
+                    cv2.putText(img, "TOTAL REPS", (15, h - 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 127), 1, cv2.LINE_AA)
+                    cv2.putText(img, str(self.count), (15, h - 15),
+                                cv2.FONT_HERSHEY_DUPLEX, 1.2, (255, 255, 255), 2, cv2.LINE_AA)
 
-                    # Draw count
-                    cv2.putText(img, f"Count: {self.count}", (15, 400),
-                                cv2.FONT_HERSHEY_DUPLEX, 1.2, (255, 255, 255), 2)
-
-                    # Draw message and hint with backgrounds
+                    # 2. TOP-LEFT STATUS CARDS
                     if self.message:
-                        (m_w, m_h), _ = cv2.getTextSize(self.message, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
-                        cv2.rectangle(img, (10, 15), (20 + m_w, 60), (0, 0, 180), -1)
-                        cv2.putText(img, self.message, (15, 50),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+                        msg_text = self.message.upper()
+                        # Smaller font scale (0.6 instead of 0.9)
+                        (m_w, m_h), _ = cv2.getTextSize(msg_text, cv2.FONT_HERSHEY_DUPLEX, 0.6, 1)
+                        
+                        bg_color = (40, 40, 230) # Blue
+                        if "VISIBLE" in msg_text or "ERROR" in msg_text or "DOWN" in msg_text or "UP" in msg_text or "LIE" in msg_text:
+                            bg_color = (0, 0, 180) # Red
+                        
+                        # Compact rectangle
+                        cv2.rectangle(img, (0, 0), (m_w + 30, 35), bg_color, -1)
+                        cv2.putText(img, msg_text, (15, 24),
+                                    cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
                         
                         if self.hint:
-                            (h_w, h_h), _ = cv2.getTextSize(self.hint, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
-                            cv2.rectangle(img, (10, 70), (20 + h_w, 100), (40, 40, 40), -1)
-                            cv2.putText(img, self.hint, (15, 92),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 255, 200), 1)
+                            (h_w, h_h), _ = cv2.getTextSize(self.hint, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                            # Compact hint box
+                            cv2.rectangle(img, (0, 35), (max(m_w + 30, h_w + 30), 60), (30, 30, 30), -1)
+                            cv2.putText(img, self.hint, (15, 52),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1, cv2.LINE_AA)
 
                 except Exception as e:
                     cv2.putText(img, "Server Error...", (50, 50),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
                 return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+        # --- FLOATING RESET BUTTON CSS ---
+        st.markdown("""
+            <style>
+            .floating-container {
+                position: fixed;
+                bottom: 80px;
+                right: 20px;
+                z-index: 1000;
+            }
+            .stButton > button {
+                border-radius: 20px;
+                border: 2px solid #ff4b4b;
+                transition: all 0.3s;
+            }
+            .stButton > button:hover {
+                background-color: #ff4b4b !important;
+                color: white !important;
+                transform: scale(1.05);
+            }
+            </style>
+        """, unsafe_allow_html=True)
 
         webrtc_ctx = webrtc_streamer(
             key="fitness-live",
@@ -651,12 +564,16 @@ with c2:
                 webrtc_ctx.video_processor.count = 0
                 webrtc_ctx.video_processor.frames = 0
             
-            # Reset Button
-            if st.button("🔄 Reset Current Count", use_container_width=True):
-                webrtc_ctx.video_processor.count = 0
-                webrtc_ctx.video_processor.frames = 0
-                webrtc_ctx.video_processor.stage = "start"
-                st.toast("Counter reset to zero!", icon="🔄")
+            # Floating Reset Button
+            with st.container():
+                st.markdown('<div class="floating-container">', unsafe_allow_html=True)
+                if st.button("🔄 RESET COUNT", key="float_reset"):
+                    webrtc_ctx.video_processor.count = 0
+                    webrtc_ctx.video_processor.frames = 0
+                    webrtc_ctx.video_processor.stage = "start"
+                    st.toast("Counter reset to zero!", icon="🔄")
+                st.markdown('</div>', unsafe_allow_html=True)
+
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -813,4 +730,3 @@ st.markdown(
     '<p class="app-footer">Pose-based estimates — use consistent framing and lighting for the most reliable counts.</p>',
     unsafe_allow_html=True,
 )
-
